@@ -1,0 +1,7 @@
+[submodule "client/lib/rpi_ws281x"]
+	path = client/lib/rpi_ws281x
+	url = https://github.com/jgarff/rpi_ws281x.git
+
+[submodule "client/lib/socket.io-client-cpp"]
+	path = client/lib/socket.io-client-cpp
+	url = https://github.com/socketio/socket.io-client-cpp.git

@@ -1,0 +1,501 @@
+<html>
+<head>
+<title>TDX Display</title>
+
+<script type="text/javascript" src="js/jscolor.min.js"></script>
+<script type="text/javascript" src="js/socket.io.min.js"></script>
+<script type="text/javascript" src="js/jquery-3.2.1.min.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.4/jquery-ui.min.js" type="text/javascript"></script>
+
+<link rel="stylesheet" href="css/jquery-ui.css">
+<style>
+#feedback { font-size: 1.4em; color: #000000;}
+#led_matrix .ui-selecting { color: #FECA40; }
+#led_matrix .ui-selected { color: #F39814; }
+#led_matrix {
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+  width: 600px;
+  height: 600px;
+  margin-top: 50px;
+  border: 2px solid #000000;
+  position: absolute;
+}
+
+#led_matrix div {
+  margin: 3px;
+  padding: 3px;
+  font-size: 9px;
+  height: 10px;
+  border: 0;
+  display:inline-block;
+  color: #FFFFFF;
+  background: #000000;
+  text-align: center;
+  cursor:pointer;
+  user-select: none;
+  position: absolute;
+  width: 15px;
+  float: left;
+}
+</style>
+
+<script type="text/javascript">
+var leds = 150;
+var socket = null;
+
+var routines = null;
+
+var current_r = 0;
+var current_g = 0;
+var current_b = 255;
+
+var should_play = false;
+var frame = 0;
+
+$(document).ready(function() {
+  var socket_address = 'http://127.0.0.1:5000';
+  console.log("address: " + socket_address);
+
+  routines = Array();
+  routines.push(createBlankRoutine());
+
+  socket = io.connect(socket_address);
+
+  socket.on('connect', function() {
+    console.log("Connected to tdx_lights server!");
+    socket.emit("get lights server");
+  });
+
+  socket.on('get lights client', function(lights) {
+    addLed(lights.identity,
+           lights.r,
+           lights.g,
+           lights.b,
+           lights.x,
+           lights.y);
+  });
+
+  socket.on('get lights finish', function() {
+    download(); 
+  });
+
+  socket.on('start download', function(pixel) {
+    console.log("START DOWNLOAD!");
+
+    $("#routine_selector").val(0);
+    $("#total_routines").val(0);
+    $("#current_frame").val(0);
+    $("#total_frames").val(0);
+  });
+
+  socket.on('create routine client', function(routine) {
+    routines[routine.identity] = routine;
+
+    var total_routines = Number($("#total_routines").val());
+    total_routines++;
+    $("#total_routines").val(total_routines);
+  });
+
+  socket.on('download pixel client', function(pixel) {
+    var pixel_routine = pixel.routine;
+    var pixel_identity = pixel.identity;
+    delete pixel.routine;
+    delete pixel.identity;
+
+    routines[pixel_routine]['pixels'][pixel_identity] = pixel
+  });
+
+  socket.on('finish download', function(pixel) {
+    console.log("FINISH DOWNLOAD!");
+
+    var frames = routines[0]['pixels'];
+    if(frames[0] == undefined) {
+      $("#total_frames").val(0);
+    } else {
+      $("#total_frames").val(Number(Object.keys(frames[0]['r']).length));
+    }
+
+    displayFrame(0);
+  });
+
+  $("#led_matrix").selectable();
+});
+
+function displayFrame(frame) {
+  var routine = routines[Number($("#routine_selector").val())];
+  var pixels = routine['pixels'];
+
+  $("#cycles").val(routine['cycles']);
+  $("#interval").val(routine['interval']);
+
+  if(pixels[0] != undefined) {
+    selected = $("#led_matrix div").each(function() {
+      $(this).css("background-color", "rgb(" 
+          + pixels[Number($(this).text())]['r'][frame] + ", "
+          + pixels[Number($(this).text())]['g'][frame] + ", "
+          + pixels[Number($(this).text())]['b'][frame] + ")");
+    });
+  }
+}
+
+function pad(n, width, z) {
+  z = z || '0';
+  n = n + '';
+  return n.length >= width ? n : new Array(width - n.length + 1).join(z) + n;
+}
+
+function addLed(identity, r, g, b, x, y) {
+  var pixel = document.createElement("div");
+  pixel.className = "ui-widget-content";
+  pixel.innerHTML = pad(identity, 3);
+  pixel.style.left = x;
+  pixel.style.top = y;
+  pixel.id = "pixel_id_" + identity;
+
+  document.getElementById("led_matrix").appendChild(pixel);
+
+  $("#" + pixel.id).draggable({
+    start: function(ev, ui) {
+      selected = $(".ui-selected").each(function() {
+        var el = $(this);
+        el.data("orig_top", Number(el.css('top').replace(/[^-\d\.]/g, '')));
+        el.data("orig_left", Number(el.css('left').replace(/[^-\d\.]/g, '')));
+      });
+
+      if(!$(this).hasClass("ui-selected")) {
+        $(this).addClass("ui-selected");
+      }
+
+      orig_top = ui.position.top;
+      orig_left = ui.position.left;
+    },
+    drag: function(ev, ui) {
+      var dt = ui.position.top - orig_top;
+      var dl = ui.position.left - orig_left;
+
+      var should_move = true;
+
+      selected.each(function() {
+        var el = $(this);
+        var start_top = el.data("orig_top");
+        var start_left = el.data("orig_left");
+
+        if(start_top + dt + $(this).outerHeight() > $("#led_matrix").height() - 5 ||
+           start_left + dl + $(this).outerWidth() > $("#led_matrix").width() ||
+           start_top + dt < 0 ||
+           start_left + dl < 0) {
+          should_move = false;
+        }
+      });
+
+      if(should_move) {
+        selected.each(function() {
+           var el = $(this);
+           var start_top = el.data("orig_top");
+           var start_left = el.data("orig_left");
+
+           el.css({top: start_top + dt,
+                   left: start_left + dl});
+        });
+      } else {
+        return false;
+      }
+    },
+    stop: function(ev, ui) {
+      selected.each(function() {
+        var identity = $(this).attr('id').substring(9);
+        var light_json = { identity: identity,
+                           x: $(this).css('left'),
+                           y: $(this).css('top')
+                         };
+
+        socket.emit("set lights", light_json);
+      });
+    },
+
+    containment: 'parent'
+  });
+}
+
+function totalRoutineChange() {
+  var identity = Number($("#total_routines").val());
+  $("#routine_selector").val(0);
+
+  if(identity <= 0) {
+    $("#total_routines").val(1);
+    routines = Array();
+    routines.push(createBlankRoutine());
+    return;
+  }
+
+  if(identity < routines.length) {
+    var to_remove = routines.length - identity;
+
+    for(var i = 0;i < to_remove;i++) {
+      routines.splice(-1, 1);
+    }
+
+    return;
+  }
+
+  if(identity > 10) {
+    identity = 10;
+    $("#total_routines").val(identity);
+  }
+
+  var to_add = identity - routines.length;
+
+  for(var i = 0;i < to_add;i++) {
+    routines.push(createBlankRoutine());
+  }
+}
+
+function totalFramesChange() {
+  var total_frames = $("#total_frames").val();
+  if(total_frames < 1) {
+    $("#total_frames").val(1)
+  }
+  total_frames = $("#total_frames").val();
+
+  for(var i = 0;i < routines.length;i++) {
+    for(var j = 0;j < Object.keys(routines[i]['pixels']).length;j++) {
+      for(var k = 0;k < total_frames;k++) {
+        if(routines[i]['pixels'][j]['r'][k] == undefined
+            || routines[i]['pixels'][j]['g'][k] == undefined
+            || routines[i]['pixels'][j]['b'][k] == undefined) {
+          routines[i]['pixels'][j]['r'][k] = 0;
+          routines[i]['pixels'][j]['g'][k] = 0;
+          routines[i]['pixels'][j]['b'][k] = 0;
+        }
+      }
+
+      for(var k = total_frames;k < routines[i]['pixels'][j]['r'].length;k++) {
+        routines[i]['pixels'][j]['r'].pop();
+      }
+
+      for(var k = total_frames;k < routines[i]['pixels'][j]['g'].length;k++) {
+        routines[i]['pixels'][j]['g'].pop();
+      }
+
+      for(var k = total_frames;k < routines[i]['pixels'][j]['b'].length;k++) {
+        routines[i]['pixels'][j]['b'].pop();
+      }
+    }
+  }
+
+  console.log(routines);
+}
+
+function cyclesChange() {
+  var cycles = Number($("#cycles").val());
+  if(cycles < 0) {
+    $("#cycles").val(0)
+  }
+  cycles = Number($("#cycles").val());
+
+  routines[Number($("#routine_selector"),val())]['cycles'] = cycles;
+}
+
+function intervalChange() {
+  var interval = Number($("#interval").val());
+  if(interval < 0) {
+    $("#interval").val(0)
+  }
+  interval = Number($("#interval").val());
+
+  routines[Number($("#routine_selector").val())]['interval'] = interval;
+}
+
+function createBlankRoutine() {
+  var routine = {
+    "identity": routines.length,
+    "pixels": Array(),
+    "cycles": 1,
+    "interval": 1
+  };
+
+  for(var i = 0;i < 150;i++) {
+    var colors = {
+      "r": Array(),
+      "g": Array(),
+      "b": Array()
+    };
+
+    for(var j = 0;j < $("#total_frames").val();j++) {
+      colors['r'].push(0);
+      colors['g'].push(0);
+      colors['b'].push(0);
+    }
+
+    routine['pixels'].push(colors);
+  }
+
+  return routine;
+}
+
+function selectedRoutineChange() {
+  if($("#routine_selector").val() >= $("#total_routines").val()) {
+    $("#routine_selector").val($("#total_routines").val() - 1);
+  } else if($("#routine_selector").val() < 0) {
+    $("#routine_selector").val(0);
+  }
+
+  $("#current_frame").val(0);
+
+  displayFrame(0);
+}
+
+function currentFrameChange() {
+  if($("#current_frame").val() >= $("#total_frames").val()) {
+    $("#current_frame").val($("#total_frames").val() - 1);
+  } else if($("#current_frame").val() < 0) {
+    $("#current_frame").val(0);
+  }
+  var current_frame = Number($("#current_frame").val());
+  if(current_frame < 0) {
+    $("#current_frame").val(0)
+  }
+  current_frame = Number($("#current_frame").val());
+
+  displayFrame(current_frame);
+}
+
+function setLights() {
+  var frame = Number($("#current_frame").val()); 
+
+  selected = $(".ui-selected").each(function() {
+    var identity = Number($(this).text());
+
+    var selected_routine = Number($("#routine_selector").val());
+    routines[selected_routine]['pixels'][identity]['r'][frame] = current_r;
+    routines[selected_routine]['pixels'][identity]['g'][frame] = current_g;
+    routines[selected_routine]['pixels'][identity]['b'][frame] = current_b;
+  });
+
+  displayFrame(frame);
+}
+
+function download() {
+  socket.emit("download routine");
+}
+
+function upload() {
+  socket.emit("reset routines");
+  for(var i = 0;i < routines.length;i++) {
+    var routine = {
+      cycles: routines[i]['cycles'],
+      interval: routines[i]['interval'],
+      identity: routines[i]['identity'],
+      pixels: {}
+    }
+
+    socket.emit("create routine", routine);
+
+    for(var j = 0;j < Object.keys(routines[i]['pixels']).length;j++) {
+      var pixel = {
+        routine: i,
+        identity: j,
+        pixel_routine: routines[i]['pixels'][j]
+      }
+
+      socket.emit("upload pixel", pixel);
+    }
+  }
+
+  socket.emit("finish upload");
+}
+
+function publish() {
+  socket.emit('load lights')
+}
+
+function updateColor(picker) {
+  current_r = Math.round(picker.rgb[0]);
+  current_g = Math.round(picker.rgb[1]);
+  current_b = Math.round(picker.rgb[2]);
+}
+
+function play() {
+  frame = 0;
+  if(should_play == true) {
+    should_play = false;
+    return;
+  }
+
+  should_play = true;
+  playChange(); 
+}
+
+function playChange() {
+  if(should_play) {
+    $("#current_frame").val(frame);
+
+    if(Number($("#current_frame").val()) >= Number($("#total_frames").val())) {
+      frame = 0;
+    }
+
+    $("#current_frame").val(frame);
+
+    displayFrame(frame);
+
+    frame++;
+
+    var interval = Number(routines[Number($("#routine_selector").val())]['interval']);
+    setTimeout(playChange, interval * 1000);
+  } else {
+    $("#current_frame").val(0);
+    displayFrame(0);
+  }
+}
+</script>
+</head>
+
+<body style="margin:0;padding:0;">
+<div id="led_matrix">
+</div>
+
+<div style="position:fixed;right:0;top:0;">
+  <label for="routine_selector">Routine: </label>
+  <input id="routine_selector" type="number" onchange="selectedRoutineChange()" min="0" value="0" style="display:block"></input>
+
+  <label for="total_routines">Total routines: </label>
+  <input id="total_routines" type="number" onchange="totalRoutineChange()" min="1" max = "10" value="1" style="display:block"></input>
+
+  <br/>
+  <br/>
+
+  <label for="current_frame">Current frame: </label>
+  <input id="current_frame" type="number" onchange="currentFrameChange()" min="0" value="0" style="display:block"></input>
+
+  <label for="total_frames">Total frames: </label>
+  <input id="total_frames" type="number" onchange="totalFramesChange()" min="1" max="500" value="1" style="display:block"></input>
+
+  <br/>
+  <br/>
+
+  <label for="cycles">Cycles: </label>
+  <input id="cycles" type="number" onchange="cyclesChange()" min="0" value="0" style="display:block"></input>
+
+  <br/>
+  <br/>
+
+  <label for="interval">Interval: </label>
+  <input id="interval" type="number" onchange="intervalChange()" min="0" value="0" style="display:block"></input>
+
+  <br/>
+  <button onclick="setLights()">set lights</button>
+  <br/>
+
+  <input class="jscolor" onChange='updateColor(this.jscolor)' id="color_picker"
+         value="0000ff"></input>
+  <br/>
+  <button onclick="play()">test</button>
+  <button onclick="upload()">upload</button>
+  <button onclick="download()">download</button>
+  <button onclick="publish()">publish</button>
+</div>
+
+</body>
+</html>
