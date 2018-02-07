@@ -1,4 +1,4 @@
-CC=/bin/gcc
+CC=/usr/bin/clang++-3.9
 RM=/bin/rm
 CFLAGS = -Wall -Wextra -g -std=c++11 -pipe \
 				 -Wno-unused-parameter -Wno-reorder -Wno-empty-body \
