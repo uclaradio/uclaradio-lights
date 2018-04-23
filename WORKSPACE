@@ -4,7 +4,7 @@ new_git_repository(
   name = 'gcc_linaro_arm_linux_gnueabihf_raspbian_repo',
   remote = 'https://github.com/uas-at-ucla/raspi-toolchain.git',
   build_file = 'compilers/gcc_linaro_arm_linux_gnueabihf_raspbian.BUILD',
-  commit = '9775415f1beb26ba071adbe559b9234cc29b843b',
+  commit = 'f1c0b5666ab9fdb0cf491a5e18cea312a077f34b',
 )
 
 new_git_repository(
@@ -33,6 +33,14 @@ new_git_repository(
   remote = 'https://github.com/socketio/socket.io-client-cpp.git',
   build_file = 'third_party/socketio_client_cpp.BUILD',
   commit = '6063cb1d612f6ca0232d4134a018053fb8faea20',
+)
+
+new_http_archive(
+    name = "gtest",
+    url = "https://github.com/google/googletest/archive/release-1.8.0.zip",
+    sha256 = "f3ed3b58511efd272eb074a3a6d6fb79d7c2e6a0e374323d1e6bcbcc1ef141bf",
+    build_file = "third_party/gtest.BUILD",
+    strip_prefix = "googletest-release-1.8.0",
 )
 
 git_repository(
