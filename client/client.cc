@@ -480,8 +480,9 @@ void play_lights() {
           rainbow.RunIteration(ledstring);
           break;
       }
+
       if(rand() % (1000000) < 100) {
-        selected_routine++;
+        selected_routine = rand() % 6;
       }
 
       if ((ret = ws2811_render(&ledstring)) != WS2811_SUCCESS) {
